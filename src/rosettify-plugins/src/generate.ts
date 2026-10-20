@@ -1,0 +1,146 @@
+// FR-CLI-0002, FR-ARCH-0032 — orchestration: resolve → build VFS → per-target pipeline run
+// FR-CLI-0050: dryRun threads into buildAllSpecs → buildPipeline; no processor swapping here.
+// FR-CLI-0020: all source roots resolved externally and passed via GenerateOptions.sources.
+
+import { buildVfs } from './vfs/build-vfs.js';
+import { createPluginFrame } from './frames.js';
+import { getRelease, listReleases } from './spec/releases.js';
+import { loadProfile } from './spec/profiles.js';
+import type { ProfileDescriptor } from './spec/profiles.js';
+import { buildAllSpecs } from './spec/targets.js';
+import { getLogger } from './logging.js';
+import type { GenerateOptions, GenError, PluginProcessingFrame } from './types.js';
+
+/**
+ * Main generation entry point.
+ * Returns exit code: 0 = success, 1 = any error.
+ * FR-CLI-0002, FR-CLI-0041 (run-to-completion)
+ */
+export async function generate(options: GenerateOptions): Promise<number> {
+  const logger = getLogger();
+  const { sources, release: releaseName, domain, dryRun, out, profile: profileName } = options;
+  const { instructionsSource, pluginsSource, hooksSource, outputDir, profileSource } = sources;
+
+  // Validate release (FR-CLI-0010/0011)
+  const descriptor = getRelease(releaseName);
+  if (!descriptor) {
+    const known = listReleases().join(', ');
+    process.stderr.write(`Unknown release: "${releaseName}". Known releases: ${known}\n`);
+    return 1;
+  }
+
+  // Load the active build profile, if any (FR-PROF-0001, FR-CLI-0032.AC4). Pre-flight, before
+  // buildVfs: a ProfileValidationError aborts the run here, before anything is written, exactly
+  // like a failed release lookup above. `profileName` undefined ⇒ no profile is active and
+  // `profile` stays null, leaving every downstream behavior unchanged (FR-PROF-0040).
+  let profile: ProfileDescriptor | null = null;
+  if (profileName !== undefined) {
+    try {
+      profile = loadProfile(profileSource, profileName);
+    } catch (err) {
+      process.stderr.write(`Failed to load profile: ${(err as Error).message}\n`);
+      return 1;
+    }
+  }
+
+  // FR-CLI-0012: effective deterministic-hooks value — CLI override when supplied,
+  // otherwise a fixed `false` default (NOT the release descriptor's native value). A no-argument
+  // invocation therefore always resolves to deterministic_hooks=false, regardless of release.
+  const release =
+    options.deterministicHooks === undefined
+      ? { ...descriptor, deterministicHooks: false }
+      : { ...descriptor, deterministicHooks: options.deterministicHooks };
+
+  // Build VFS (FR-ARCH-0010–0014, FR-CLI-0030/0031)
+  // instructionsSource is the resolved instructions root (FR-CLI-0020)
+  let vfs;
+  try {
+    vfs = buildVfs(instructionsSource, releaseName, domain);
+  } catch (err) {
+    process.stderr.write(`Failed to resolve instruction sources: ${(err as Error).message}\n`);
+    return 1;
+  }
+
+  // FR-PROF-0001: profile name only — never descriptor contents (FR-ARCH-0050 logging discipline).
+  logger.info({ release: releaseName, domain, profile: profileName ?? null, vfsSize: vfs.length }, 'VFS built');
+
+  // Build all target specs — dryRun threads into every disk-mutating processor (FR-CLI-0050)
+  // FR-CLI-0020: pluginsSource and hooksSource are resolved externally
+  // FR-PROF-0010/0020/0021/0030: the loaded descriptor (or null) and the active profile name (or
+  // null) are handed to buildAllSpecs, which is the sole place profile data enters spec
+  // construction — effective-vocabulary resolution, destination/manifest suffixing, and the
+  // activeProfile carried into TargetContext for directive evaluation all originate from here.
+  const specs = buildAllSpecs({
+    pluginsSource,
+    hooksSource,
+    outputDir,
+    release,
+    dryRun,
+    out,
+    profile,
+    activeProfile: profileName ?? null,
+  });
+
+  // Template context for all targets
+  const baseTemplateContext: Record<string, unknown> = {
+    release: releaseName,
+    deterministic_hooks: release.deterministicHooks,
+    bootstrap_hooks: '',
+  };
+
+  const allErrors: GenError[] = [];
+  let anyError = false;
+
+  // Process each target independently (FR-CLI-0040, FR-CLI-0041)
+  for (const spec of specs) {
+    logger.info({ target: spec.name }, 'Processing target');
+
+    const frame = createPluginFrame(spec, vfs, { ...baseTemplateContext });
+
+    // Pipeline already has dryRun baked in via buildAllSpecs (FR-CLI-0050).
+    const pipeline = spec.pluginProcessors;
+
+    let currentFrame: PluginProcessingFrame = frame;
+
+    try {
+      for (const processor of pipeline) {
+        // FR-ARCH-0050: per-PluginProcessor debug logging — frame metadata, no content
+        logger.debug({
+          target: spec.name,
+          processor: processor.name || '(anonymous)',
+          framesBefore: currentFrame.frames.length,
+          errorsBefore: currentFrame.errors.length,
+        }, 'FR-ARCH-0050: plugin-processor start');
+        currentFrame = processor(currentFrame);
+        logger.debug({
+          target: spec.name,
+          processor: processor.name || '(anonymous)',
+          framesAfter: currentFrame.frames.length,
+          errorsAfter: currentFrame.errors.length,
+        }, 'FR-ARCH-0050: plugin-processor done');
+      }
+    } catch (err) {
+      const errMsg = (err as Error).message ?? String(err);
+      allErrors.push({
+        target: spec.name,
+        message: `Processor error: ${errMsg}`,
+        kind: 'hard',
+      });
+      anyError = true;
+      logger.error({ target: spec.name, error: errMsg }, 'Target processing failed');
+      continue;
+    }
+
+    if (currentFrame.errors.length > 0) {
+      for (const e of currentFrame.errors) {
+        allErrors.push(e);
+        process.stderr.write(`[${e.kind}] ${e.target}${e.file ? ':' + e.file : ''}: ${e.message}\n`);
+        if (e.kind === 'hard' || e.kind === 'soft') anyError = true; // NFR-0004/QF-2: soft errors also set exit ≠ 0
+      }
+    }
+
+    logger.info({ target: spec.name, frames: currentFrame.frames.length }, 'Target complete');
+  }
+
+  return anyError ? 1 : 0;
+}

@@ -1,0 +1,20 @@
+{
+  "name": "rosetta-hooks",
+  "private": true,
+  "scripts": {
+    "build": "tsc && node scripts/build-bundles.mjs && rm -rf dist/shell && mkdir -p dist/shell && cp -R shell/. dist/shell/",
+    "build:quiet": "tsc && node scripts/build-bundles.mjs --quiet && rm -rf dist/shell && mkdir -p dist/shell && cp -R shell/. dist/shell/",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.28.1",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "json-cycle": "^1.5.0"
+  },
+  "overrides": {
+    "postcss": "8.5.23"
+  }
+}

@@ -1,0 +1,130 @@
+# E2E test runtime artifacts (generated plugin, built src.zip)
+tests/e2e-tests/.runtime/
+tests/e2e-tests/*/src.zip
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+/dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.serena
+tmp/
+docs/plans/
+
+# Node.js
+node_modules/
+dist/
+
+# JS/TS test & build artifacts
+coverage/
+.nyc_output/
+.vitest/
+*.tsbuildinfo
+*.lcov
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv
+
+# Environment files
+*.env*
+!env.template
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.cursor/mcp.json
+
+# OS
+Thumbs.db
+*.bak
+
+# macOS — fixed names macOS itself writes. No wildcards: AppleDouble sidecars
+# are named `._` + the real filename, so they cannot be listed explicitly.
+# .DS_Store is Finder view state; the rest appear at a volume root or with
+# Time Machine / custom volume icons.
+.DS_Store
+.AppleDouble
+.LSOverride
+.Spotlight-V100
+.Trashes
+.fseventsd
+.TemporaryItems
+.VolumeIcon.icns
+.apdisk
+.com.apple.timemachine.donotpresent
+
+# Project-specific
+server_output.log
+src/rosetta-cli/server_output.log
+src/rosetta-cli/logs/
+
+# Local data directories
+business/
+confluence-docs/
+
+# Temporary files
+temporary/
+*.tmp
+*.temp
+src/rosetta-cli/test-remote-*.sh
+
+# Jekyll / GitHub Pages
+docs/web/_site/
+docs/web/.bundle/
+docs/web/vendor/
+docs/web/llms-full.txt
+_site/
+.jekyll-cache/
+.jekyll-metadata
+.sass-cache/
+.playwright-mcp/
+.bundle/
+vendor/
+
+# Rosetta
+agents/TEMP/
+refsrc/
+!refsrc/INDEX.md
+
+# Per-package build output (src/<pkg>/)
+src/*/node_modules/
+src/*/dist/
+src/*/*.egg-info/
+src/*/.pytest_cache/
+
+# Vitest cache (root-level node_modules/.vite/)
+node_modules/.vite/
+
+# Temporary build output
+.worktrees/
+
+# Local output of scripts/generate_plugins_custom.mjs
+plugins-custom/
